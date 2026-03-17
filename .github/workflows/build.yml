@@ -1,0 +1,147 @@
+name: Build
+on:
+  push: { }
+
+env:
+  APP_NAME: "ZuikiProToTraincrew"
+  TZ: "Asia/Tokyo"
+
+jobs:
+  calc_version:
+    runs-on: ubuntu-latest
+    name: "Calc Version"
+    outputs:
+      VERSION: ${{ steps.calc_version.outputs.VERSION }}
+      APP_PREFIX: ${{ steps.calc_version.outputs.APP_PREFIX }}
+    steps:
+      - name: Get latest release
+        id: latest_release
+        uses: actions/github-script@v7.0.1
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          script: |
+            try {
+              const response = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              return response.data.tag_name;
+            }
+            catch (e){
+              if (e.status === 404) {
+                return '0.1.0';
+              } else {
+                throw e;
+              }
+            }
+      - name: Calculate Version
+        id: calc_version
+        run: |
+          latest_tag="${{ steps.latest_release.outputs.result }}"
+          if [ -n "${latest_tag}" ]; then
+            major=$(echo $latest_tag | awk -F. '{print $1}' | sed 's/v//g')
+            minor=$(echo $latest_tag | awk -F. '{print $2}')
+            patch=$(echo $latest_tag | awk -F. '{print $3}')
+            patch=$((patch + 1))
+            VERSION="v${major}.${minor}.${patch}"
+          else
+            VERSION=$(date +%Y%m%d%H%M%S)
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          file_name_version=$(echo "$VERSION" | sed 's/\./_/g')
+          echo "APP_PREFIX=${{ env.APP_NAME }}_${file_name_version}" >> "$GITHUB_OUTPUT"
+  build:
+    runs-on: ubuntu-latest
+    name: "Build"
+    needs: calc_version
+    strategy:
+      matrix:
+        standalone: [ false, true ]
+    steps:
+      - name: Set Zip File Name
+        run: |
+          echo "APP_VERSION=${{ needs.calc_version.outputs.VERSION }}" >> $GITHUB_ENV
+          ZIP_FILE_BASE=${{ needs.calc_version.outputs.APP_PREFIX }}${{ (matrix.standalone && '-standalone') || '' }}
+          echo "ZIP_FILE_BASE=${ZIP_FILE_BASE}" >> $GITHUB_ENV
+          echo "ZIP_FILE_NAME=${ZIP_FILE_BASE}.zip" >> $GITHUB_ENV
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+      - name: Setup dotnet 8.0.x
+        uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: '8.0.x'
+      - name: Create global.json for .NET 8.0.x
+        run: |
+          cat <<EOF > ./global.json
+          {
+            "sdk": {
+              "version": "8.0.0",
+              "rollForward": "latestFeature"
+            }
+          }
+          EOF
+      - name: Build Exe
+        run: |
+          dotnet publish \
+            ./TraincrewDepMelody/TraincrewDepMelody.csproj \
+            -c Release \
+            -o ./out \
+            -r win-x64 \
+            -p:PublishSingleFile=true \
+            -p:EnableWindowsTargeting=true \
+            --self-contained ${{ matrix.standalone }}
+      - name: Zip binaries
+        run: |
+          cd out
+          zip -r ../${{ env.ZIP_FILE_NAME }} .
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          path: ./${{ env.ZIP_FILE_NAME }}
+          name: ${{ env.ZIP_FILE_NAME }}
+  create_new_release:
+    runs-on: ubuntu-latest
+    name: "Create New Release"
+    permissions:
+      contents: write
+    needs:
+      - calc_version
+      - build
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4.2.1
+        with:
+          path: 'out'
+          merge-multiple: 'true'
+      - name: Get Files
+        id: get_files
+        run: |
+          files=(
+            "out/${{ needs.calc_version.outputs.APP_PREFIX }}-standalone.zip"
+            "out/${{ needs.calc_version.outputs.APP_PREFIX }}.zip"
+          )
+          exists_files=""
+          for file in "${files[@]}"; do
+            echo "Checking file: $file"
+            if [ ! -f "$file" ]; then
+             echo "File $file does not exist, skipping."
+             continue
+            fi
+            if [ -n "$exists_files" ]; then
+              exists_files+=$'\n'
+            fi
+            exists_files+="$file"
+          done
+          {
+            echo 'FILES<<EOF'
+            echo "$exists_files"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+      - name: Create New Release
+        id: create_release
+        uses: softprops/action-gh-release@v2.2.1
+        with:
+          tag_name: ${{ needs.calc_version.outputs.VERSION }}
+          make_latest: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          files: ${{ steps.get_files.outputs.FILES }}
+          prerelease: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
