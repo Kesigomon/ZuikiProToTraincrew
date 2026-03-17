@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HidLibrary" Version="3.3.37" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="TrainCrewInput">
+      <HintPath>..\TrainCrewInput\DLL\TrainCrewInput.dll</HintPath>
+    </Reference>
+    <None Include="..\TrainCrewInput\DLL\TrainCrewInput.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>TrainCrewInput.dll</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

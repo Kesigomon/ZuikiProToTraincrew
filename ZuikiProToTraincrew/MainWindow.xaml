@@ -1,0 +1,81 @@
+<Window x:Class="ZuikiProToTraincrew.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Zuiki Mascon Pro → TrainCrew" Height="580" Width="660"
+        Loaded="Window_Loaded" Closing="Window_Closing">
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom">
+            <TextBlock x:Name="_statusText" Text="未接続" />
+        </StatusBar>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="8">
+
+                <!-- A: デバイス接続 -->
+                <GroupBox Header="デバイス接続" Margin="0,0,0,4">
+                    <StackPanel Orientation="Horizontal" Margin="4">
+                        <ComboBox x:Name="_deviceCombo" Width="340" Margin="0,0,4,0" />
+                        <Button x:Name="_btnRefresh" Content="更新" Width="50" Margin="0,0,4,0" Click="BtnRefresh_Click" />
+                        <Button x:Name="_btnConnect" Content="接続" Width="60" Margin="0,0,4,0" Click="BtnConnect_Click" />
+                        <Button x:Name="_btnDisconnect" Content="切断" Width="60" IsEnabled="False" Click="BtnDisconnect_Click" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- B: 入力状態 -->
+                <GroupBox Header="入力状態" Margin="0,0,0,4">
+                    <Grid Margin="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="ノッチ:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtNotch" Text="-" Grid.Row="0" Grid.Column="1" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock Text="レバーサ:" Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtReverser" Text="-" Grid.Row="0" Grid.Column="4" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" />
+                        <TextBlock Text="警笛:" Grid.Row="0" Grid.Column="6" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtHorn" Text="-" Grid.Row="0" Grid.Column="7" FontWeight="Bold" VerticalAlignment="Center" />
+                        <TextBlock Text="戸締め灯:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtDoorLamp" Text="-" Grid.Row="1" Grid.Column="1" FontWeight="Bold" VerticalAlignment="Center" />
+                        <TextBlock Text="EB灯:" Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtEBLamp" Text="-" Grid.Row="1" Grid.Column="4" FontWeight="Bold" VerticalAlignment="Center" />
+                    </Grid>
+                </GroupBox>
+
+                <!-- C: 送信モード -->
+                <GroupBox Header="送信モード" Margin="0,0,0,4">
+                    <StackPanel Orientation="Horizontal" Margin="4">
+                        <RadioButton x:Name="_radioDiff" Content="差分検知（変化時のみ送信）" IsChecked="True" Margin="0,0,16,0" />
+                        <RadioButton x:Name="_radioAlways" Content="常時送信" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- D: ボタン割り当て -->
+                <GroupBox Header="ボタン割り当て" Margin="0,0,0,4">
+                    <Grid Margin="4" x:Name="_buttonMapGrid">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="180" />
+                        </Grid.ColumnDefinitions>
+                        <!-- Rows are populated in code-behind -->
+                    </Grid>
+                </GroupBox>
+
+                <!-- E: 保存 -->
+                <Button Content="設定を保存" Width="120" HorizontalAlignment="Left" Margin="0,4,0,0" Click="BtnSave_Click" />
+
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
