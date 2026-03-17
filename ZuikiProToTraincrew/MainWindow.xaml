@@ -13,9 +13,8 @@
                 <!-- A: デバイス接続 -->
                 <GroupBox Header="デバイス接続" Margin="0,0,0,4">
                     <StackPanel Orientation="Horizontal" Margin="4">
-                        <ComboBox x:Name="_deviceCombo" Width="340" Margin="0,0,4,0" />
-                        <Button x:Name="_btnRefresh" Content="更新" Width="50" Margin="0,0,4,0" Click="BtnRefresh_Click" />
-                        <Button x:Name="_btnConnect" Content="接続" Width="60" Margin="0,0,4,0" Click="BtnConnect_Click" />
+                        <TextBlock x:Name="_txtDeviceStatus" Text="検出中…" VerticalAlignment="Center" Margin="0,0,8,0" Width="200" />
+                        <Button x:Name="_btnConnect" Content="接続" Width="60" Margin="0,0,4,0" IsEnabled="False" Click="BtnConnect_Click" />
                         <Button x:Name="_btnDisconnect" Content="切断" Width="60" IsEnabled="False" Click="BtnDisconnect_Click" />
                     </StackPanel>
                 </GroupBox>

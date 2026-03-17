@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using HidLibrary;
 using TrainCrew;
 using Windows.Gaming.Input;
@@ -31,6 +32,8 @@ public partial class MainWindow : Window
     private bool _prevEBReset = false;
 
     private AppSettings _settings = new();
+    private DispatcherTimer? _detectTimer;
+    private bool _deviceAvailable;
 
     // ボタン割り当てUI
     private readonly record struct ButtonMapEntry(string Key, string Label);
@@ -97,11 +100,17 @@ public partial class MainWindow : Window
     {
         TrainCrewInput.Init();
         LoadSettings();
-        RefreshDeviceList();
+
+        // デバイス検出タイマー（1秒間隔）
+        _detectTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _detectTimer.Tick += (_, _) => UpdateDeviceAvailability();
+        _detectTimer.Start();
+        UpdateDeviceAvailability();
     }
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        _detectTimer?.Stop();
         StopPolling();
         _hidDevice?.CloseDevice();
         _hidDevice?.Dispose();
@@ -109,47 +118,39 @@ public partial class MainWindow : Window
         TrainCrewInput.Dispose();
     }
 
-    // ─── デバイス一覧 ────────────────────────────────────────────
+    // ─── デバイス検出 ────────────────────────────────────────────
 
-    private void BtnRefresh_Click(object sender, RoutedEventArgs e) => RefreshDeviceList();
-
-    private void RefreshDeviceList()
+    private RawGameController? FindController()
     {
-        _deviceCombo.Items.Clear();
-        var controllers = RawGameController.RawGameControllers;
-        for (int i = 0; i < controllers.Count; i++)
+        foreach (var c in RawGameController.RawGameControllers)
         {
-            var c = controllers[i];
-            _deviceCombo.Items.Add(
-                $"[{i}] {c.DisplayName ?? "(名前なし)"}  VID=0x{c.HardwareVendorId:X4} PID=0x{c.HardwareProductId:X4}");
+            if (c.HardwareVendorId == VID && c.HardwareProductId == PID)
+                return c;
         }
-        if (_deviceCombo.Items.Count > 0)
-        {
-            // VID/PID が一致するデバイスを自動選択
-            for (int i = 0; i < controllers.Count; i++)
-            {
-                if (controllers[i].HardwareVendorId == VID && controllers[i].HardwareProductId == PID)
-                {
-                    _deviceCombo.SelectedIndex = i;
-                    break;
-                }
-            }
-            if (_deviceCombo.SelectedIndex < 0)
-                _deviceCombo.SelectedIndex = 0;
-        }
+        return null;
+    }
+
+    private void UpdateDeviceAvailability()
+    {
+        // 接続中はスキップ
+        if (_controller != null) return;
+
+        var found = FindController();
+        _deviceAvailable = found != null;
+        _btnConnect.IsEnabled = _deviceAvailable;
+        _txtDeviceStatus.Text = _deviceAvailable
+            ? $"検出: {found!.DisplayName ?? "Zuiki Mascon Pro"}"
+            : "デバイス未検出";
     }
 
     // ─── 接続/切断 ──────────────────────────────────────────────
 
     private void BtnConnect_Click(object sender, RoutedEventArgs e)
     {
-        if (_deviceCombo.SelectedIndex < 0) return;
+        var found = FindController();
+        if (found == null) return;
 
-        var controllers = RawGameController.RawGameControllers;
-        int idx = _deviceCombo.SelectedIndex;
-        if (idx >= controllers.Count) return;
-
-        _controller = controllers[idx];
+        _controller = found;
 
         // HidDevice を開く（OutputReport 送信用）
         var hidDevices = HidDevices.Enumerate(
@@ -186,7 +187,8 @@ public partial class MainWindow : Window
 
         _btnConnect.IsEnabled = false;
         _btnDisconnect.IsEnabled = true;
-        _statusText.Text = $"接続中: {_controller.DisplayName ?? "(名前なし)"}";
+        _txtDeviceStatus.Text = $"接続中: {_controller.DisplayName ?? "Zuiki Mascon Pro"}";
+        _statusText.Text = "接続しました";
     }
 
     private void BtnDisconnect_Click(object sender, RoutedEventArgs e)
@@ -197,9 +199,9 @@ public partial class MainWindow : Window
         _hidDevice = null;
         _controller = null;
 
-        _btnConnect.IsEnabled = true;
         _btnDisconnect.IsEnabled = false;
         _statusText.Text = "切断しました";
+        // 検出タイマーが接続ボタンの有効/無効を更新する
     }
 
     // ─── ポーリング ─────────────────────────────────────────────
@@ -226,16 +228,16 @@ public partial class MainWindow : Window
         var buttons = new bool[_prevButtons!.Length];
         var switches = new GameControllerSwitchPosition[_prevSwitches!.Length];
 
-        bool alwaysSend = _settings.AlwaysSend;
+        var alwaysSend = _settings.AlwaysSend;
         var buttonMapSnapshot = new Dictionary<string, string>(_settings.ButtonMap);
 
         // カスタムボタン前回状態
         var prevCustom = new Dictionary<string, bool>();
 
-        int loopCount = 0;
+        var loopCount = 0;
         // ランプ前回状態
-        bool prevDoorLamp = false;
-        bool prevEBLamp = false;
+        var prevDoorLamp = false;
+        var prevEBLamp = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -244,7 +246,7 @@ public partial class MainWindow : Window
                 _controller!.GetCurrentReading(buttons, switches, axes);
 
                 // --- ノッチ ---
-                int notch = AxisToNotch(axes[1]);
+                var notch = AxisToNotch(axes[1]);
                 if (notch != _prevNotch || alwaysSend)
                 {
                     TrainCrewInput.SetNotch(notch);
@@ -252,7 +254,7 @@ public partial class MainWindow : Window
                 }
 
                 // --- レバーサ ---
-                int reverser = AxisToReverser(axes[3]);
+                var reverser = AxisToReverser(axes[3]);
                 if (reverser != _prevReverser || alwaysSend)
                 {
                     TrainCrewInput.SetReverser(reverser);
@@ -260,13 +262,9 @@ public partial class MainWindow : Window
                 }
 
                 // --- 警笛 (Axis[0]) ---
-                int hornState = AxisToHornState(axes[0]);
+                var hornState = AxisToHornState(axes[0]);
                 if (hornState != _prevHornState)
                 {
-                    // まず両方OFF
-                    TrainCrewInput.SetButton(InputAction.HornAir, false);
-                    TrainCrewInput.SetButton(InputAction.HornEle, false);
-
                     switch (hornState)
                     {
                         case 0: // 空笛のみ (raw 0-31)
@@ -276,6 +274,8 @@ public partial class MainWindow : Window
                             TrainCrewInput.SetButton(InputAction.HornEle, true);
                             break;
                         case 2: // OFF (raw 96-191)
+                            TrainCrewInput.SetButton(InputAction.HornAir, false);
+                            TrainCrewInput.SetButton(InputAction.HornEle, false);
                             break;
                         case 3: // 空笛 (raw 192-255)
                             TrainCrewInput.SetButton(InputAction.HornAir, true);
@@ -285,7 +285,7 @@ public partial class MainWindow : Window
                 }
 
                 // --- 勾配起動 (Axis[2]) ---
-                bool gradient = AxisToGradient(axes[2]);
+                var gradient = AxisToGradient(axes[2]);
                 if (gradient != _prevGradient)
                 {
                     TrainCrewInput.SetButton(InputAction.GradientStart, gradient);
@@ -295,7 +295,7 @@ public partial class MainWindow : Window
                 // --- 固定ボタン: Button[10] EBリセット ---
                 if (buttons.Length > 10)
                 {
-                    bool ebReset = buttons[10];
+                    var ebReset = buttons[10];
                     if (ebReset != _prevEBReset)
                     {
                         TrainCrewInput.SetButton(InputAction.EBReset, ebReset);
@@ -306,13 +306,13 @@ public partial class MainWindow : Window
                 // --- カスタムボタン ---
                 ProcessCustomButtons(buttons, switches, buttonMapSnapshot, prevCustom);
 
-                // --- ランプ制御 (10ループに1回) ---
+                // --- ランプ制御 (6ループに1回) ---
                 loopCount++;
-                if (loopCount % 10 == 0 && _hidDevice != null && _hidDevice.IsOpen)
+                if (loopCount % 6 == 0 && _hidDevice is { IsOpen: true })
                 {
                     var state = TrainCrewInput.GetTrainState();
-                    bool doorLamp = state.Lamps[PanelLamp.DoorClose];
-                    bool ebLamp = state.Lamps[PanelLamp.EB_Timer] || state.Lamps[PanelLamp.EmagencyBrake];
+                    var doorLamp = state.Lamps[PanelLamp.DoorClose];
+                    var ebLamp = state.Lamps[PanelLamp.EB_Timer];
 
                     if (doorLamp != prevDoorLamp || ebLamp != prevEBLamp)
                     {
@@ -323,9 +323,9 @@ public partial class MainWindow : Window
                 }
 
                 // --- UI更新 ---
-                string notchStr = NotchToString(notch);
-                string reverserStr = reverser switch { 1 => "前進", 0 => "中立", -1 => "後進", _ => "-" };
-                string hornStr = hornState switch { 0 => "空笛", 1 => "電笛", 2 => "OFF", 3 => "空笛", _ => "-" };
+                var notchStr = NotchToString(notch);
+                var reverserStr = reverser switch { 1 => "前進", 0 => "中立", -1 => "後進", _ => "-" };
+                var hornStr = hornState switch { 0 => "空笛", 1 => "電笛", 2 => "OFF", 3 => "空笛", _ => "-" };
 
                 Dispatcher.InvokeAsync(() =>
                 {
@@ -345,29 +345,29 @@ public partial class MainWindow : Window
 
     private static int AxisToNotch(double v)
     {
-        int raw = (int)Math.Round(v * 255);
+        var raw = (int)Math.Round(v * 255);
         return raw switch
         {
-            <= 11 => -8,    // EB
-            <= 38 => -7,    // B7/B8 → TC B6
-            <= 52 => -6,    // B6 → TC B5
-            <= 66 => -5,    // B5 → TC B4
-            <= 79 => -4,    // B4 → TC B3
-            <= 93 => -3,    // B3 → TC B2
-            <= 107 => -2,   // B2 → TC B1
-            <= 121 => -1,   // B1 → 抑速
-            <= 143 => 0,    // N
-            <= 169 => 1,    // P1
-            <= 194 => 2,    // P2
-            <= 218 => 3,    // P3
-            <= 242 => 4,    // P4
+            <= 4 => -8,    // EB
+            <= 19 => -7,   // 物理B7/B8 → TC B6
+            <= 38 => -6,   // 物理B6 → TC B5
+            <= 52 => -5,   // 物理B5 → TC B4
+            <= 66 => -4,   // 物理B4 → TC B3
+            <= 79 => -3,   // 物理B3 → TC B2
+            <= 93 => -2,   // 物理B2 → TC B1
+            <= 107 => -1,  // 物理B1 → 抑速
+            <= 143 => 0,   // N
+            <= 169 => 1,   // P1
+            <= 194 => 2,   // P2
+            <= 218 => 3,   // P3
+            <= 242 => 4,   // P4
             _ => 5,         // P5
         };
     }
 
     private static int AxisToReverser(double v)
     {
-        int raw = (int)Math.Round(v * 255);
+        var raw = (int)Math.Round(v * 255);
         return raw switch
         {
             <= 63 => 0,     // 切/中立
@@ -378,7 +378,7 @@ public partial class MainWindow : Window
 
     private static int AxisToHornState(double v)
     {
-        int raw = (int)Math.Round(v * 255);
+        var raw = (int)Math.Round(v * 255);
         return raw switch
         {
             <= 31 => 0,     // 空笛
@@ -390,7 +390,7 @@ public partial class MainWindow : Window
 
     private static bool AxisToGradient(double v)
     {
-        int raw = (int)Math.Round(v * 255);
+        var raw = (int)Math.Round(v * 255);
         return raw >= 192;
     }
 
@@ -441,7 +441,7 @@ public partial class MainWindow : Window
                      switches[0] == GameControllerSwitchPosition.DownLeft ||
                      switches[0] == GameControllerSwitchPosition.DownRight);
             }
-            else if (ButtonKeyToIndex.TryGetValue(entry.Key, out int btnIdx) && btnIdx < buttons.Length)
+            else if (ButtonKeyToIndex.TryGetValue(entry.Key, out var btnIdx) && btnIdx < buttons.Length)
             {
                 pressed = buttons[btnIdx];
             }
@@ -450,7 +450,7 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            prevCustom.TryGetValue(entry.Key, out bool prevState);
+            prevCustom.TryGetValue(entry.Key, out var prevState);
             if (pressed != prevState)
             {
                 TrainCrewInput.SetButton(action, pressed);
@@ -463,7 +463,7 @@ public partial class MainWindow : Window
 
     private void UpdateLamps(bool doorClose, bool eb)
     {
-        if (_hidDevice == null || !_hidDevice.IsOpen) return;
+        if (_hidDevice is not { IsOpen: true }) return;
 
         var report = _hidDevice.CreateReport();
         // OutputReport[3] = 戸締め灯, OutputReport[4] = EB灯
@@ -486,13 +486,13 @@ public partial class MainWindow : Window
     private void BuildButtonMapGrid()
     {
         // 左列(0-6)と右列(7-12)に分ける
-        int leftCount = 7;
-        int totalRows = leftCount;
+        var leftCount = 7;
+        var totalRows = leftCount;
 
-        for (int i = 0; i < totalRows; i++)
+        for (var i = 0; i < totalRows; i++)
             _buttonMapGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        for (int i = 0; i < CustomButtons.Length; i++)
+        for (var i = 0; i < CustomButtons.Length; i++)
         {
             int col, row;
             if (i < leftCount)
@@ -562,7 +562,7 @@ public partial class MainWindow : Window
             if (_settings.ButtonMap.TryGetValue(entry.Key, out var actionStr))
             {
                 // actionStr → Display名を探す
-                int idx = Array.FindIndex(ActionEntries, ae => ae.Name == actionStr);
+                var idx = Array.FindIndex(ActionEntries, ae => ae.Name == actionStr);
                 combo.SelectedIndex = idx >= 0 ? idx : 0;
             }
             else
@@ -578,7 +578,7 @@ public partial class MainWindow : Window
         foreach (var entry in CustomButtons)
         {
             if (!_mapCombos.TryGetValue(entry.Key, out var combo)) continue;
-            int idx = combo.SelectedIndex;
+            var idx = combo.SelectedIndex;
             if (idx > 0 && idx < ActionEntries.Length)
                 _settings.ButtonMap[entry.Key] = ActionEntries[idx].Name;
         }
