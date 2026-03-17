@@ -83,7 +83,7 @@ jobs:
       - name: Build Exe
         run: |
           dotnet publish \
-            ./TraincrewDepMelody/TraincrewDepMelody.csproj \
+            ./ZuikiProToTraincrew/ZuikiProToTraincrew.csproj \
             -c Release \
             -o ./out \
             -r win-x64 \
