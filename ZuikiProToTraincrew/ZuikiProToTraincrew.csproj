@@ -16,7 +16,7 @@
     <Reference Include="TrainCrewInput">
       <HintPath>..\TrainCrewInput\DLL\TrainCrewInput.dll</HintPath>
     </Reference>
-    <None Include="..\TrainCrewInput\DLL\TrainCrewInput.dll">
+    <None Include="..\DLL\TrainCrewInput.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>TrainCrewInput.dll</Link>
     </None>
