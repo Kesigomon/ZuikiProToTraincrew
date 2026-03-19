@@ -27,8 +27,6 @@ public partial class MainWindow : Window
     private GameControllerSwitchPosition[]? _prevSwitches;
     private int _prevNotch = int.MinValue;
     private int _prevReverser = int.MinValue;
-    private int _prevHornState = -1; // 0=AirOnly, 1=Ele, 2=Off, 3=Air
-    private bool _prevGradient = false;
     private bool _prevEBReset = false;
 
     private AppSettings _settings = new();
@@ -46,6 +44,9 @@ public partial class MainWindow : Window
         new("Btn4", "L"),
         new("Btn5", "R"),
         new("Btn7", "ZR"),
+        new("AxisHornP", "警笛(ペダル深)"),
+        new("AxisHornE", "警笛(ペダル浅)"),
+        new("AxisHornM", "警笛(マスコン)"),
         new("Btn8", "−"),
         new("Btn9", "+"),
         new("Btn12", "Home"),
@@ -54,6 +55,9 @@ public partial class MainWindow : Window
         new("SwDown", "Switch↓"),
         new("SwLeft", "Switch←"),
         new("SwRight", "Switch→"),
+        new("AxisGrad",  "勾配起動"),
+        new("AxisPant",  "パン下げ"),
+        new("Btn11",     "ATS確認"),
     ];
 
     // InputAction の表示名テーブル
@@ -177,8 +181,6 @@ public partial class MainWindow : Window
         _controller.GetCurrentReading(_prevButtons, _prevSwitches, _prevAxes);
         _prevNotch = int.MinValue;
         _prevReverser = int.MinValue;
-        _prevHornState = -1;
-        _prevGradient = false;
         _prevEBReset = false;
 
         // 設定スナップショット取得
@@ -263,36 +265,8 @@ public partial class MainWindow : Window
                     _prevReverser = reverser;
                 }
 
-                // --- 警笛 (Axis[0]) ---
+                // --- 警笛 表示用 ---
                 var hornState = AxisToHornState(axes[0]);
-                if (hornState != _prevHornState)
-                {
-                    switch (hornState)
-                    {
-                        case 0: // 空笛のみ (raw 0-31)
-                            TrainCrewInput.SetButton(InputAction.HornAir, true);
-                            break;
-                        case 1: // 電笛 (raw 32-95)
-                            TrainCrewInput.SetButton(InputAction.HornEle, true);
-                            break;
-                        case 2: // OFF (raw 96-191)
-                            TrainCrewInput.SetButton(InputAction.HornAir, false);
-                            TrainCrewInput.SetButton(InputAction.HornEle, false);
-                            break;
-                        case 3: // 空笛 (raw 192-255)
-                            TrainCrewInput.SetButton(InputAction.HornAir, true);
-                            break;
-                    }
-                    _prevHornState = hornState;
-                }
-
-                // --- 勾配起動 (Axis[2]) ---
-                var gradient = AxisToGradient(axes[2]);
-                if (gradient != _prevGradient)
-                {
-                    TrainCrewInput.SetButton(InputAction.GradientStart, gradient);
-                    _prevGradient = gradient;
-                }
 
                 // --- 固定ボタン: Button[10] EBリセット ---
                 if (buttons.Length > 10)
@@ -306,7 +280,7 @@ public partial class MainWindow : Window
                 }
 
                 // --- カスタムボタン ---
-                ProcessCustomButtons(buttons, switches, buttonMapSnapshot, prevCustom);
+                ProcessCustomButtons(buttons, switches, axes, buttonMapSnapshot, prevCustom);
 
                 // --- ランプ制御 (6ループに1回) ---
                 loopCount++;
@@ -396,6 +370,12 @@ public partial class MainWindow : Window
         return raw >= 192;
     }
 
+    private static bool AxisToPantographDown(double v)
+    {
+        var raw = (int)Math.Round(v * 255);
+        return raw <= 31; // ハードウェア実測で要確認
+    }
+
     private static string NotchToString(int notch) => notch switch
     {
         -8 => "EB",
@@ -417,6 +397,7 @@ public partial class MainWindow : Window
     private void ProcessCustomButtons(
         bool[] buttons,
         GameControllerSwitchPosition[] switches,
+        double[] axes,
         Dictionary<string, string> map,
         Dictionary<string, bool> prevCustom)
     {
@@ -457,6 +438,18 @@ public partial class MainWindow : Window
                      switches[0] == GameControllerSwitchPosition.UpRight ||
                      switches[0] == GameControllerSwitchPosition.DownRight);
             }
+            else if (entry.Key == "AxisHornP")
+                pressed = AxisToHornState(axes[0]) == 0;
+            else if (entry.Key == "AxisHornE")
+                pressed = AxisToHornState(axes[0]) == 1;
+            else if (entry.Key == "AxisHornM")
+                pressed = AxisToHornState(axes[0]) == 3;
+            else if (entry.Key == "AxisGrad")
+                pressed = AxisToGradient(axes[2]);
+            else if (entry.Key == "AxisPant")
+                pressed = AxisToPantographDown(axes[2]);
+            else if (entry.Key == "Btn11")
+                pressed = buttons.Length > 11 && buttons[11];
             else if (ButtonKeyToIndex.TryGetValue(entry.Key, out var btnIdx) && btnIdx < buttons.Length)
             {
                 pressed = buttons[btnIdx];
@@ -501,8 +494,8 @@ public partial class MainWindow : Window
 
     private void BuildButtonMapGrid()
     {
-        // 左列(0-6)と右列(7-)に分ける
-        var leftCount = 7;
+        // 左列(0-9)と右列(10-)に分ける
+        var leftCount = 10;
         var rightCount = CustomButtons.Length - leftCount;
         var totalRows = Math.Max(leftCount, rightCount);
 
@@ -562,6 +555,17 @@ public partial class MainWindow : Window
             _settings = new AppSettings();
         }
 
+        // 既存 settings.json に新キーが無い場合のデフォルト（後方互換性）
+        if (!_settings.ButtonMap.ContainsKey("AxisHornP"))
+            _settings.ButtonMap["AxisHornP"] = "HornAir";
+        if (!_settings.ButtonMap.ContainsKey("AxisHornE"))
+            _settings.ButtonMap["AxisHornE"] = "HornEle";
+        if (!_settings.ButtonMap.ContainsKey("AxisHornM"))
+            _settings.ButtonMap["AxisHornM"] = "HornAir";
+        if (!_settings.ButtonMap.ContainsKey("AxisGrad"))
+            _settings.ButtonMap["AxisGrad"] = "GradientStart";
+        // AxisPant・Btn11 は実機未確認のためデフォルト "None"
+
         ApplySettingsToUI();
     }
 
@@ -596,7 +600,7 @@ public partial class MainWindow : Window
         {
             if (!_mapCombos.TryGetValue(entry.Key, out var combo)) continue;
             var idx = combo.SelectedIndex;
-            if (idx > 0 && idx < ActionEntries.Length)
+            if (idx >= 0 && idx < ActionEntries.Length)
                 _settings.ButtonMap[entry.Key] = ActionEntries[idx].Name;
         }
     }
