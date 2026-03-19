@@ -52,6 +52,8 @@ public partial class MainWindow : Window
         new("Btn13", "キャプチャー"),
         new("SwUp", "Switch↑"),
         new("SwDown", "Switch↓"),
+        new("SwLeft", "Switch←"),
+        new("SwRight", "Switch→"),
     ];
 
     // InputAction の表示名テーブル
@@ -441,6 +443,20 @@ public partial class MainWindow : Window
                      switches[0] == GameControllerSwitchPosition.DownLeft ||
                      switches[0] == GameControllerSwitchPosition.DownRight);
             }
+            else if (entry.Key == "SwLeft")
+            {
+                pressed = switches.Length > 0 &&
+                    (switches[0] == GameControllerSwitchPosition.Left ||
+                     switches[0] == GameControllerSwitchPosition.UpLeft ||
+                     switches[0] == GameControllerSwitchPosition.DownLeft);
+            }
+            else if (entry.Key == "SwRight")
+            {
+                pressed = switches.Length > 0 &&
+                    (switches[0] == GameControllerSwitchPosition.Right ||
+                     switches[0] == GameControllerSwitchPosition.UpRight ||
+                     switches[0] == GameControllerSwitchPosition.DownRight);
+            }
             else if (ButtonKeyToIndex.TryGetValue(entry.Key, out var btnIdx) && btnIdx < buttons.Length)
             {
                 pressed = buttons[btnIdx];
@@ -485,9 +501,10 @@ public partial class MainWindow : Window
 
     private void BuildButtonMapGrid()
     {
-        // 左列(0-6)と右列(7-12)に分ける
+        // 左列(0-6)と右列(7-)に分ける
         var leftCount = 7;
-        var totalRows = leftCount;
+        var rightCount = CustomButtons.Length - leftCount;
+        var totalRows = Math.Max(leftCount, rightCount);
 
         for (var i = 0; i < totalRows; i++)
             _buttonMapGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
