@@ -242,6 +242,7 @@ public partial class MainWindow : Window
         // ランプ前回状態
         var prevDoorLamp = false;
         var prevEBLamp = false;
+        bool? prevIsEM = null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -251,10 +252,11 @@ public partial class MainWindow : Window
 
                 // --- ノッチ ---
                 var notch = AxisToNotch(axes[1]);
-                if (notch != _prevNotch || alwaysSend)
+                var sendNotch = ConvertNotchForBrakeType(notch, prevIsEM ?? false);
+                if (sendNotch != _prevNotch || alwaysSend)
                 {
-                    TrainCrewInput.SetNotch(notch);
-                    _prevNotch = notch;
+                    TrainCrewInput.SetNotch(sendNotch);
+                    _prevNotch = sendNotch;
                 }
 
                 // --- レバーサ ---
@@ -282,24 +284,37 @@ public partial class MainWindow : Window
                 // --- カスタムボタン ---
                 ProcessCustomButtons(buttons, switches, axes, buttonMapSnapshot, prevCustom);
 
-                // --- ランプ制御 (6ループに1回) ---
+                // --- ランプ制御・電磁直通判定 (6ループに1回) ---
                 loopCount++;
-                if (loopCount % 6 == 0 && _hidDevice is { IsOpen: true })
+                if (loopCount % 6 == 0)
                 {
                     var state = TrainCrewInput.GetTrainState();
-                    var doorLamp = state.Lamps[PanelLamp.DoorClose];
-                    var ebLamp = state.Lamps[PanelLamp.EB_Timer];
 
-                    if (doorLamp != prevDoorLamp || ebLamp != prevEBLamp)
+                    // 電磁直通判定
+                    var isEM = state.CarStates?.Any(c => c.CarModel is "3000" or "3020") ?? false;
+                    if (isEM != prevIsEM)
                     {
-                        UpdateLamps(doorLamp, ebLamp);
-                        prevDoorLamp = doorLamp;
-                        prevEBLamp = ebLamp;
+                        prevIsEM = isEM;
+                        Dispatcher.InvokeAsync(() =>
+                            _txtCarType.Text = isEM ? "電磁直通" : "電気指令");
+                    }
+
+                    if (_hidDevice is { IsOpen: true })
+                    {
+                        var doorLamp = state.Lamps[PanelLamp.DoorClose];
+                        var ebLamp = state.Lamps[PanelLamp.EB_Timer];
+
+                        if (doorLamp != prevDoorLamp || ebLamp != prevEBLamp)
+                        {
+                            UpdateLamps(doorLamp, ebLamp);
+                            prevDoorLamp = doorLamp;
+                            prevEBLamp = ebLamp;
+                        }
                     }
                 }
 
                 // --- UI更新 ---
-                var notchStr = NotchToString(notch);
+                var notchStr = NotchToString(notch, prevIsEM ?? false);
                 var reverserStr = reverser switch { 1 => "前進", 0 => "中立", -1 => "後進", _ => "-" };
                 var hornStr = hornState switch { 0 => "空笛", 1 => "電笛", 2 => "OFF", 3 => "空笛", _ => "-" };
 
@@ -324,20 +339,21 @@ public partial class MainWindow : Window
         var raw = (int)Math.Round(v * 255);
         return raw switch
         {
-            <= 4 => -8,    // EB
-            <= 19 => -7,   // 物理B7/B8 → TC B6
-            <= 38 => -6,   // 物理B6 → TC B5
-            <= 52 => -5,   // 物理B5 → TC B4
-            <= 66 => -4,   // 物理B4 → TC B3
-            <= 79 => -3,   // 物理B3 → TC B2
-            <= 93 => -2,   // 物理B2 → TC B1
-            <= 107 => -1,  // 物理B1 → 抑速
+            <= 4  => -9,   // 物理EB
+            <= 12 => -8,   // 物理B8 (中点: (5+19)/2=12)
+            <= 25 => -7,   // 物理B7 (中点: (19+32)/2≈25)
+            <= 38 => -6,   // 物理B6
+            <= 52 => -5,   // 物理B5
+            <= 66 => -4,   // 物理B4
+            <= 79 => -3,   // 物理B3
+            <= 93 => -2,   // 物理B2
+            <= 107 => -1,  // 物理B1(抑速)
             <= 143 => 0,   // N
             <= 169 => 1,   // P1
             <= 194 => 2,   // P2
             <= 218 => 3,   // P3
             <= 242 => 4,   // P4
-            _ => 5,         // P5
+            _ => 5,        // P5
         };
     }
 
@@ -376,14 +392,40 @@ public partial class MainWindow : Window
         return raw <= 31; // ハードウェア実測で要確認
     }
 
-    private static string NotchToString(int notch) => notch switch
+    private static string NotchToString(int notch, bool isEM)
     {
-        -8 => "EB",
-        -1 => "抑速",
-        0 => "N",
-        > 0 => $"P{notch}",
-        _ => $"B{-notch - 1}",
-    };
+        if (isEM)
+        {
+            return notch switch
+            {
+                -9 => "EB",
+                < 0 => $"{-notch * 50}kPa",  // -1→50kPa, ..., -8→400kPa
+                0 => "N",
+                _ => $"P{notch}",
+            };
+        }
+        return notch switch
+        {
+            -9 => "EB",
+            -8 => "B6",
+            -1 => "抑速",
+            0 => "N",
+            > 0 => $"P{notch}",
+            _ => $"B{-notch - 1}",  // -7→B6, -6→B5, -5→B4, ..., -2→B1
+        };
+    }
+
+    private static int ConvertNotchForBrakeType(int physicalNotch, bool isEM)
+    {
+        if (isEM) return physicalNotch;
+        // 非電磁直通: B7(-7) or B8(-8) → TrainCrew B6(-7), EB(-9) → TrainCrew EB(-8)
+        return physicalNotch switch
+        {
+            -7 or -8 => -7,
+            -9       => -8,
+            _        => physicalNotch,
+        };
+    }
 
     // ─── カスタムボタン ──────────────────────────────────────────
 

@@ -31,6 +31,11 @@
                             <ColumnDefinition Width="20" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition />
+                            <ColumnDefinition />
+                            <ColumnDefinition />
+                            <ColumnDefinition />
+                            <ColumnDefinition />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition />
@@ -46,6 +51,10 @@
                         <TextBlock x:Name="_txtDoorLamp" Text="-" Grid.Row="1" Grid.Column="1" FontWeight="Bold" VerticalAlignment="Center" />
                         <TextBlock Text="EB灯:" Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" />
                         <TextBlock x:Name="_txtEBLamp" Text="-" Grid.Row="1" Grid.Column="4" FontWeight="Bold" VerticalAlignment="Center" />
+                        <TextBlock Text="車両タイプ:" Grid.Row="1" Grid.Column="5" Grid.ColumnSpan="2" VerticalAlignment="Center" />
+                        <TextBlock x:Name="_txtCarType" Text="-"
+                                   Grid.Row="1" Grid.Column="7"
+                                   FontWeight="Bold" VerticalAlignment="Center" />
                     </Grid>
                 </GroupBox>
 
