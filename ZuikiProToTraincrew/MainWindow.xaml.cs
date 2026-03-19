@@ -62,7 +62,7 @@ public partial class MainWindow : Window
         ("None", "(なし)"),
         ("HornAir", "空笛"),
         ("HornEle", "電笛"),
-        ("Buzzer", "連絡ブザ"),
+        ("Buzzer", "連絡ブザー"),
         ("GradientStart", "勾配起動"),
         ("EBReset", "EBリセット"),
         ("ViewChange", "視点変更"),
